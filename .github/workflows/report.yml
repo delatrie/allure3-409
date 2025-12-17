@@ -1,0 +1,73 @@
+name: Create report
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Run on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24.x'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npx allure run --stage=${{ matrix.os }} --environment=${{ matrix.os }}  -- npm test
+      continue-on-error: true
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v5
+      with:
+        name: ${{ matrix.os }}
+        path: ./${{ matrix.os }}.zip
+
+  report:
+    needs: test
+    name: Build report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Download Linux results
+        uses: actions/download-artifact@v6
+        with:
+          name: ubuntu-latest
+          path: ./
+
+      - name: Download Windows results
+        uses: actions/download-artifact@v6
+        with:
+          name: windows-latest
+          path: ./
+
+      - name: Generate the report
+        run: npx allure generate --stage=*.zip
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './allure-report'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
